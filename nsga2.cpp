@@ -2,50 +2,590 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <numeric>
+#include <random>
+#include <map>
+#include <sstream>
+#include <algorithm>
 
-#define N 500 // tamanho da populaçao
-#define G 200 // quantidade de geraçoes
+#define N 10 // tamanho da populaçao
+#define G 10 // quantidade de geraçoes
 
-std::vector<std::vector<bool>> alocacao(2*N);
+#define LI 0.1 // limite inferior
+#define LS 0.9 // limite superior
+
+#define TC 0.9  // taxa de cruzamento
+#define TM1 0.1 // taxa de mutaçao 1
+#define TM2 0.1 // taxa de mutaçao 2
+#define TM3 0.1 // taxa de mutaçao 3
+#define AM 10   // agressividade da mutaçao
+
+#define TF "trace.csv"   // arquivo de entrada
+#define CF "cluster.csv" // arquivo de clusters
+
 std::vector<int> totalAlocacao(2*N);
-std::vector<int> totalCobertura(2*N);
+std::vector<std::vector<int>> totalCobertura(2*N);
+std::vector<std::vector<bool>> alocacao(2*N);
+
+std::vector<std::vector<int>> movimentacao;
+std::vector<int> cluster;
+std::vector<int> contato;
+
+std::map<int, std::pair<int, int>> indiceParaCelula;
+
+std::random_device rd;                         
+std::mt19937 gen(rd()); 
+
+int numeroCelulas = 0;
+int numeroVeiculos = 0;
+int numeroClusters = 0;
 
 void leParametros()
 {
+    std::map<std::pair<int, int>, int> celulaParaIndice;
+    std::ifstream file(TF);
+    std::string line;
+    while (std::getline(file, line)) 
+    {
+        std::stringstream lineStream(line);
+        std::string cell;
+        std::vector<std::string> parsedRow;
+        while (std::getline(lineStream, cell, ',')) 
+        {
+            parsedRow.push_back(cell);
+        }
+        int veiculo, celula;
+        std::pair<int, int> posCelula;
+        for (const auto& val : parsedRow) 
+        {
+            veiculo = std::stoi(parsedRow[0]);
+            posCelula = {std::stoi(parsedRow[2]), std::stoi(parsedRow[3])};
+            auto it = celulaParaIndice.find(posCelula);
+            if(it == celulaParaIndice.end())
+            {
+                celula = celulaParaIndice.size();
+                celulaParaIndice[posCelula] = celula;
+                indiceParaCelula[celula] = posCelula;
+            }
+            else
+            {
+                celula = it->second;
+            }
+        }
+        while(veiculo > celulaParaIndice.size()-1)
+        {
+            movimentacao.push_back(std::vector<int>());
+        }
+        if(std::find(movimentacao[veiculo].begin(), movimentacao[veiculo].end(), celula) == movimentacao[veiculo].end() && veiculo >= 0)
+        {
+            movimentacao[veiculo].push_back(celula);
+        }
+    }
+    file.close();
+    std::ifstream file2(CF);
+    while (std::getline(file, line)) 
+    {
+        std::stringstream lineStream(line);
+        std::string cell;
+        std::vector<std::string> parsedRow;
+        while (std::getline(lineStream, cell, ',')) 
+        {
+            parsedRow.push_back(cell);
+        }
+        std::pair<int, int> posCelula = {std::stoi(parsedRow[0]), std::stoi(parsedRow[1])};
+        auto it = celulaParaIndice.find(posCelula);
+        if(it != celulaParaIndice.end())
+        {
+            int c = std::stoi(parsedRow[2]);
+            if(c >= 0)
+            {
+                cluster[it->second] = c;
+            }
+        }
+    }
+    file2.close();
 }
 
 void inicializa()
 {
+    alocacao.resize(2*N, std::vector<bool>(numeroCelulas, false));
+    totalCobertura.resize(2*N, std::vector<int>(numeroClusters, 0));
+    contato.resize(numeroClusters);
+    std::iota(contato.rbegin(), contato.rend(), 1);
+    std::fill(totalAlocacao.begin(), totalAlocacao.end(), 0);
+    std::fill(totalCobertura.begin(), totalCobertura.end(), 0);
 }
 
 void geraPopulacaoInicial()
 {
+    std::uniform_int_distribution<> dist(LI*numeroCelulas, LS*numeroCelulas-1);
+    for(int i=0; i<numeroCelulas; i++)
+    {
+        std::vector<int> listaVazia(numeroCelulas);
+        std::iota(listaVazia.begin(), listaVazia.end(), 0);
+        int tamanho = dist(gen);
+        for(int j=0; j<tamanho; j++)
+        {
+            std::uniform_int_distribution<> dist2(0, listaVazia.size()-1);
+            int pos = dist2(gen);
+            alocacao[i][listaVazia[pos]] = true;
+            totalAlocacao[i] ++;
+            alocacao.erase(alocacao.begin()+pos);
+        }
+    }
 }
 
 void avalia(int formulacao)
 {
+    if(formulacao == 1)
+    {
+        for(int i=0; i<N; i++)
+        {
+            for(int j=0; j<numeroVeiculos; j++)
+            {
+                std::vector<int> contador(numeroClusters, 0);
+                for(int celula: movimentacao[j])
+                {
+                    if(alocacao[i][celula])
+                    {
+                        contador[cluster[celula]] ++;
+                    }
+                }
+                for(int k=0; k<numeroClusters; k++)
+                {
+                    if(contador[k] >= contato[k])
+                    {
+                        totalCobertura[i][k] ++;
+                    }
+                }
+            }
+        }
+    }
+    else if(formulacao == 2)
+    {
+        for(int i=0; i<N; i++)
+        {
+            for(int j=0; j<numeroVeiculos; j++)
+            {
+                int contador = 0;
+                std::vector<bool> passou(numeroClusters, 0);
+                for(int celula: movimentacao[j])
+                {
+                    if(alocacao[i][celula])
+                    {
+                        contador ++;
+                        passou[cluster[celula]] = true;
+                    }
+                }
+                for(int k=0; k<numeroClusters; k++)
+                {
+                    if(passou[k] && contador >= contato[k])
+                    {
+                        totalCobertura[i][k] ++;
+                    }
+                }
+            }
+        }
+    }
+}
+
+void recombinacao(int filho, int tamanho, int pai1, int pai2, double proporcaoPai1)
+{
+    std::uniform_real_distribution<> dist(0.0, 1.0);
+    std::vector<int> listaPai1, listaPai2, listaVazia;
+    int tamanhoAtual = 0;
+    std::fill(totalCobertura[filho].begin(), totalCobertura[filho].end(), 0);
+    for(int i=0; i<numeroCelulas; i++)
+    {
+        alocacao[filho][i] = false;
+        totalAlocacao[filho] = 0;
+        if(alocacao[pai1][i])
+        {
+            listaPai1.push_back(i);
+        }
+        if(alocacao[pai2][i])
+        {
+            listaPai2.push_back(i);
+        }
+    }
+    while(totalAlocacao[filho] < tamanho)
+    {
+        if(!listaPai1.empty() && (dist(gen) < proporcaoPai1 || listaPai2.empty()))
+        {
+            std::uniform_int_distribution<> dist2(0, listaPai1.size()-1);
+            int pos = dist2(gen);
+            if(!alocacao[filho][listaPai1[pos]])
+            {
+                alocacao[filho][listaPai1[pos]] = true;
+                totalAlocacao[filho] ++;
+            }
+            listaPai1.erase(listaPai1.begin()+pos);
+        }
+        else if(!listaPai2.empty())
+        {
+            std::uniform_int_distribution<> dist2(0, listaPai2.size()-1);
+            int pos = dist2(gen);
+            if(!alocacao[filho][listaPai2[pos]])
+            {
+                alocacao[filho][listaPai2[pos]] = true;
+                totalAlocacao[filho] ++;
+            }
+            listaPai2.erase(listaPai2.begin()+pos);
+        }
+        else
+        {
+            break;
+        }
+    }
 }
 
 void cruzamento()
 {
+    std::uniform_int_distribution<> dist(N, 2*N-1);
+    std::uniform_real_distribution<> dist2(0.0, 1.0);
+    for(int i=0; i<N; i++)
+    {
+        int pai1 = dist(gen);
+        int pai2 = dist(gen);
+        while(pai1 == pai2)
+        {
+            pai2 = dist(gen);
+        }
+        if(dist2(gen) > TC)
+        {
+            std::copy(alocacao[pai1].begin(), alocacao[pai1].end(), alocacao[i].begin());
+            std::fill(totalCobertura[i].begin(), totalCobertura[i].end(), 0);
+            totalAlocacao[i] = pai1;
+            std::copy(alocacao[pai2].begin(), alocacao[pai2].end(), alocacao[i+1].begin());
+            std::fill(totalCobertura[i+1].begin(), totalCobertura[i+1].end(), 0);
+            totalAlocacao[i+1] = pai2;
+            continue;
+        }
+        double proporcaoPai1 = dist2(gen);
+        int media = (totalAlocacao[pai1]+totalAlocacao[pai2])/2.0;
+        int desvio = std::abs(totalAlocacao[pai1]-totalAlocacao[pai2])/2.0;
+        std::normal_distribution<> dist3(media, desvio);
+        int tamanhoFilho = dist3(gen);
+        while(tamanhoFilho < LI*numeroCelulas || tamanhoFilho > LS*numeroCelulas) 
+        {
+            tamanhoFilho = dist3(gen);
+        }
+        recombinacao(i, tamanhoFilho, pai1, pai2, proporcaoPai1);
+        recombinacao(i+1, tamanhoFilho, pai1, pai2, 1.0-proporcaoPai1);
+    }
+}
+
+void mutacao1(int filho)
+{
+    std::vector<int> listaVazia;
+    for(int i=0; i<numeroCelulas; i++)
+    {
+        if(!alocacao[filho][i])
+        {
+            listaVazia.push_back(i);
+        }
+    }
+    if(listaVazia.size() >= AM && totalAlocacao[filho]+AM <= LS*numeroCelulas)
+    {
+        for(int i=0; i<AM; i++)
+        {
+            std::uniform_int_distribution<> dist(0, listaVazia.size()-1);
+            int pos = dist(gen);
+            alocacao[filho][listaVazia[pos]] = true;
+            totalAlocacao[filho] ++;
+            listaVazia.erase(listaVazia.begin()+pos);
+        }
+    }
+}
+
+void mutacao2(int filho)
+{
+    std::vector<int> listaVazia;
+    for(int i=0; i<numeroCelulas; i++)
+    {
+        if(alocacao[filho][i])
+        {
+            listaVazia.push_back(i);
+        }
+    }
+    if(listaVazia.size() >= AM && totalAlocacao[filho]-AM >= LI*numeroCelulas)
+    {
+        for(int i=0; i<AM; i++)
+        {
+            std::uniform_int_distribution<> dist(0, listaVazia.size()-1);
+            int pos = dist(gen);
+            alocacao[filho][listaVazia[pos]] = false;
+            totalAlocacao[filho] --;
+            listaVazia.erase(listaVazia.begin()+pos);
+        }
+    }
+}
+
+void mutacao3(int filho)
+{
+    std::vector<int> listaVazia;
+    std::vector<int> listaCheia;
+    for(int i=0; i<numeroCelulas; i++)
+    {
+        if(alocacao[filho][i])
+        {
+            listaVazia.push_back(i);
+        }
+        else
+        {
+            listaCheia.push_back(i);
+        }
+    }
+    if(listaVazia.size() >= AM && listaCheia.size() >= AM)
+    {
+        for(int i=0; i<AM; i++)
+        {
+            std::uniform_int_distribution<> dist(0, listaVazia.size()-1);
+            std::uniform_int_distribution<> dist2(0, listaCheia.size()-1);
+            int pos = dist(gen);
+            int pos2 = dist2(gen);
+            alocacao[filho][listaVazia[pos]] = true;
+            listaVazia.erase(listaVazia.begin()+pos);
+            alocacao[filho][listaCheia[pos]] = false;
+            listaCheia.erase(listaCheia.begin()+pos);
+        }
+    }
 }
 
 void mutacao()
 {
+    std::uniform_real_distribution<> dist(0.0, 1.0);
+    for(int i=0; i<N; i++)
+    {
+        if(dist(gen) < TM1)
+        {
+            mutacao1(i); // adiciona RSUs
+        }
+        if(dist(gen) < TM2)
+        {
+            mutacao2(i); // remove RSUs
+        }
+        if(dist(gen) < TM3)
+        {
+            mutacao3(i); // realoca RSUs
+        }
+    }
+}
+
+bool domina(int individuo1, int individuo2)
+{
+    bool domina = false;
+    if(totalAlocacao[individuo1] < totalAlocacao[individuo2])
+    {
+        domina = true;
+    }
+    else if(totalAlocacao[individuo1] > totalAlocacao[individuo2])
+    {
+        return false;
+    }
+    for(int i=0; i<numeroClusters; i++)
+    {
+        if(totalCobertura[individuo1][i] > totalCobertura[individuo2][i])
+        {
+            domina = true;
+        }
+        else if(totalCobertura[individuo1][i] < totalCobertura[individuo2][i])
+        {
+            return false;
+        }
+    }
+    return domina;
+}
+
+void ordenacaoNaoDominada(std::vector<int> &rank)
+{
+    std::vector<std::vector<int>> dominados(2*N);
+    std::vector<int> numeroDomina(2*N, 0);
+    std::vector<int> fronteira;
+    for(int i=0; i<2*N; i++)
+    {
+        for(int j=0; j<2*N; j++)
+        {
+            if(domina(i, j))
+            {
+                dominados[i].push_back(j);
+            }
+            else if(domina(j, i))
+            {
+                numeroDomina[i] ++;
+            }
+        }
+        if(numeroDomina[i] == 0)
+        {
+            rank[i] = 0;
+            fronteira.push_back(i);
+        }
+    }
+    int r = 0;
+    while(fronteira.size() > 0)
+    {
+        std::vector<int> temporario;
+        for(int individuo: fronteira)
+        {
+            for(int elemento: dominados[individuo])
+            {
+                numeroDomina[elemento] --;
+                if(numeroDomina[elemento] == 0)
+                {
+                    rank[elemento] = r+1;
+                    temporario.push_back(elemento);
+                }
+            }
+        }
+        r ++;
+        fronteira.clear();
+        fronteira = temporario;
+    }
+}
+
+void distanciaDeMultidao(std::vector<std::pair<double, int>> &distancia)
+{
+    int tamanho = distancia.size();
+    std::vector<std::pair<int, int>> ordenaAlocacao(tamanho);
+    int max = totalAlocacao[distancia[0].second];
+    int min = totalAlocacao[distancia[0].second];
+    for(int i=0; i<tamanho; i++)
+    {
+        ordenaAlocacao[i] = {totalAlocacao[distancia[i].second], i};
+        if(totalAlocacao[distancia[i].second] > max)
+        {
+            max = totalAlocacao[distancia[i].second];
+        }
+        else if(totalAlocacao[distancia[i].second] < min)
+        {
+            min = totalAlocacao[distancia[i].second];
+        }
+    }
+    std::sort(ordenaAlocacao.begin(), ordenaAlocacao.end());
+    distancia[ordenaAlocacao[0].second].first = numeroClusters + 1.0;
+    distancia[ordenaAlocacao[tamanho-1].second].first = numeroClusters + 1.0;
+    for(int i=1; i<tamanho-1; i++)
+    {
+        int vizinhoMaior = distancia[ordenaAlocacao[i+1].second].second;
+        int vizinhoMenor = distancia[ordenaAlocacao[i-1].second].second;
+        distancia[ordenaAlocacao[i].second].first += double(totalAlocacao[vizinhoMaior]-totalAlocacao[vizinhoMenor])/double(max-min);
+    }
+    for(int j=0; j<numeroClusters; j++)
+    {
+        std::vector<std::pair<int, int>> ordenaCobertura(tamanho);
+        int max = totalCobertura[distancia[0].second][j];
+        int min = totalCobertura[distancia[0].second][j];
+        for(int i=0; i<tamanho; i++)
+        {
+            ordenaCobertura[i] = {totalCobertura[distancia[i].second][j], i};
+            if(totalCobertura[distancia[i].second][j] > max)
+            {
+                max = totalCobertura[distancia[i].second][j];
+            }
+            else if(totalCobertura[distancia[i].second][j] < min)
+            {
+                min = totalCobertura[distancia[i].second][j];
+            }
+        }
+        std::sort(ordenaCobertura.begin(), ordenaCobertura.end());
+        distancia[ordenaCobertura[0].second].first = numeroClusters + 1.0;
+        distancia[ordenaCobertura[tamanho-1].second].first = numeroClusters + 1.0;
+        for(int i=1; i<tamanho-1; i++)
+        {
+            int vizinhoMaior = distancia[ordenaCobertura[i+1].second].second;
+            int vizinhoMenor = distancia[ordenaCobertura[i-1].second].second;
+            distancia[ordenaCobertura[i].second].first += double(totalCobertura[vizinhoMaior][j]-totalCobertura[vizinhoMenor][j])/double(max-min);
+        }
+    }
 }
 
 void selecao()
 {
+    std::vector<int> rank(2*N);
+    ordenacaoNaoDominada(rank);
+    std::vector<std::vector<bool>> alocacaoTemp;
+    std::vector<std::vector<int>> totalCoberturaTemp;
+    std::vector<int> totalAlocacaoTemp;
+    int rankFronteira = 0;
+    while(totalAlocacaoTemp.size() < N)
+    {
+        std::vector<std::pair<double, int>> distancia;
+        for(int i=0; i<2*N; i++)
+        {
+            if(rank[i] == rankFronteira)
+            {
+                distancia.push_back({0.0, i});
+            }
+        }
+        if(totalAlocacaoTemp.size() + distancia.size() <= N)
+        {
+            for(int i=0; i<distancia.size(); i++)
+            {
+                int indice = distancia[i].second;
+                alocacaoTemp.push_back(alocacao[indice]);
+                totalAlocacaoTemp.push_back(totalAlocacao[indice]);
+                totalCoberturaTemp.push_back(totalCobertura[indice]);
+            }
+        }
+        else
+        {
+            distanciaDeMultidao(distancia);
+            std::sort(distancia.begin(), distancia.end());
+            for(int i=0; i<N-totalAlocacaoTemp.size(); i++)
+            {
+                int indice = distancia[i].second;
+                alocacaoTemp.push_back(alocacao[indice]);
+                totalAlocacaoTemp.push_back(totalAlocacao[indice]);
+                totalCoberturaTemp.push_back(totalCobertura[indice]);
+            }
+        }
+        rankFronteira ++;
+    }
+    std::copy(alocacaoTemp.begin(), alocacaoTemp.end(), alocacao.begin()+N);
+    std::copy(totalAlocacaoTemp.begin(), totalAlocacaoTemp.end(), totalAlocacao.begin()+N);
+    std::copy(totalCoberturaTemp.begin(), totalCoberturaTemp.end(), totalCobertura.begin()+N);
 }
 
 void imprimeSolucoes(int numeroExperimento)
 {
+    for(int i=0; i<N; i++)
+    {
+        std::ofstream myFile("solucao"+std::to_string(numeroExperimento)+"-"+std::to_string(i+1)+".txt");
+        myFile << "Total de RSUs:" << std::endl;
+        myFile << totalAlocacao[i+N] << std::endl;
+        for(int j=0; j<numeroClusters; j++)
+        {
+            myFile << "Cobertura no cluster "+std::to_string(j)+":" << std::endl;
+            myFile << totalCobertura[i+N][j] << std::endl;
+        } 
+        myFile << "Celulas com RSU:" << std::endl;
+        for(int j: alocacao[i+N])
+        {
+            auto it = indiceParaCelula.find(j);
+            if (it != indiceParaCelula.end())
+            {
+                myFile << std::to_string(it->second.first)+","+std::to_string(it->second.second) << std::endl;
+            }
+        }
+        myFile.close();
+    }
 }
 
 int main(int argc, char **argv)
 {
     int formulacao = 2;
     int numeroExperimento = 1;
+    if(argc == 3)
+    {
+        formulacao = std::atoi(argv[1]);
+        numeroExperimento = std::atoi(argv[2]);
+    }
+    else
+    {
+        char output;
+        std::cout << "Utilizando formulacao " << formulacao << " e experimento " << numeroExperimento << std::endl;
+        std::cin >> output;
+    }
     leParametros();
     inicializa();
     geraPopulacaoInicial();
