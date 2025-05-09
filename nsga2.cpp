@@ -7,39 +7,58 @@
 #include <map>
 #include <sstream>
 #include <algorithm>
+#include <climits>
+#include <chrono>
 #include <stdio.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <dirent.h>
 
-#define N 10 // tamanho da populaçao - deve ser par
-#define G 10 // quantidade de geraçoes
+#define N 500 // tamanho da populaçao - deve ser par
+#define G 500 // quantidade de geraçoes
 
-#define LI 0.1 // limite inferior
-#define LS 0.9 // limite superior
+#define LI 0.01 // limite inferior
+#define LS 0.5  // limite superior
 
 #define TC 0.9  // taxa de cruzamento
 #define TM1 0.1 // taxa de mutaçao 1
 #define TM2 0.1 // taxa de mutaçao 2
 #define TM3 0.1 // taxa de mutaçao 3
-#define AM 10   // agressividade da mutaçao
+#define AM 0.01 // agressividade da mutaçao
 
-#define TF "trace.csv"   // arquivo de entrada
-#define CF "cluster.csv" // arquivo de clusters
+#define QBL 20 // quantidade de elementos do baseline
 
+#define TF "trace.csv"    // arquivo de entrada
+#define CF "cluster.csv"  // arquivo de clusters
+#define BL "baseline.csv" // arquivo de clusters
+
+
+// objetivos
 std::vector<int> totalAlocacao(2*N, 0);
 std::vector<std::vector<int>> totalCobertura;
+
+// variaveis de decisao
 std::vector<std::vector<bool>> alocacao;
 
+// parametros
 std::vector<std::vector<int>> movimentacao;
+std::vector<std::vector<int>> tempoInicial;
 std::vector<int> cluster;
 std::vector<int> contato;
 
+// variaveis auxiliares
 std::map<int, std::pair<int, int>> indiceParaCelula;
+std::vector<int> baseline;
 
+// aleatoriedade
 std::random_device rd;                         
 std::mt19937 gen(rd()); 
 
+// limites
 int numeroCelulas = 0;
 int numeroVeiculos = 0;
 int numeroClusters = 0;
+int tempoInicio = INT_MAX;
 
 void leParametros()
 {
@@ -59,6 +78,11 @@ void leParametros()
         int veiculo, celula;
         std::pair<int, int> posCelula;
         int veiculoId = std::stoi(parsedRow[0]);
+        int tempo = int(std::stod(parsedRow[1]));
+        if(tempo < tempoInicio)
+        {
+            tempoInicio = tempo;
+        }
         posCelula = {std::stoi(parsedRow[2]), std::stoi(parsedRow[3])};
         auto it = celulaParaIndice.find(posCelula);
         if(it == celulaParaIndice.end())
@@ -83,9 +107,11 @@ void leParametros()
         }
         numeroVeiculos = veiculoParaIndice.size();
         movimentacao.resize(numeroVeiculos, std::vector<int>());
+        tempoInicial.resize(numeroVeiculos, std::vector<int>());
         if(std::find(movimentacao[veiculo].begin(), movimentacao[veiculo].end(), celula) == movimentacao[veiculo].end() && veiculo >= 0)
         {
             movimentacao[veiculo].push_back(celula);
+            tempoInicial[veiculo].push_back(tempo);
         }
     }
     file.close();
@@ -118,6 +144,46 @@ void leParametros()
     }
     file2.close();
     numeroClusters ++;
+    std::ifstream file3(BL);
+    while (std::getline(file3, line)) 
+    {
+        std::stringstream lineStream(line);
+        std::string cell;
+        std::vector<std::string> parsedRow;
+        while (std::getline(lineStream, cell, ',')) 
+        {
+            parsedRow.push_back(cell);
+        }
+        std::pair<int, int> posCelula = {std::stoi(parsedRow[0]), std::stoi(parsedRow[1])};
+        auto it = celulaParaIndice.find(posCelula);
+        if(it != celulaParaIndice.end())
+        {
+            baseline.push_back(it->second);
+        }
+    }
+    file3.close();
+}
+
+int carregaBaseline()
+{
+    if(baseline.size() < LS*numeroCelulas || QBL > N)
+    {
+        return 0;
+    }
+    int tamanho = LI*numeroCelulas;
+    for(int i=0; i<QBL; i++)
+    {
+        for(int j=0; j<tamanho; j++)
+        {
+            alocacao[i][baseline[j]] = true;
+        }
+        totalAlocacao[i] = tamanho;
+        if(QBL > 1)
+        {
+            tamanho += double(LS-LI) * double(numeroCelulas) / double(QBL-1);
+        }
+    }
+    return QBL;
 }
 
 void inicializa()
@@ -125,13 +191,17 @@ void inicializa()
     alocacao.resize(2*N, std::vector<bool>(numeroCelulas, false));
     totalCobertura.resize(2*N, std::vector<int>(numeroClusters, 0));
     contato.resize(numeroClusters);
-    std::iota(contato.rbegin(), contato.rend(), 1);
+    for(int i=0; i<numeroClusters; i++)
+    {
+        contato[i] = pow(3, numeroClusters-i-1);
+    }
 }
 
 void geraPopulacaoInicial()
 {
     std::uniform_int_distribution<> dist(int(LI*numeroCelulas), int(LS*numeroCelulas-1));
-    for(int i=0; i<N; i++)
+    int individuosBaseline = carregaBaseline();
+    for(int i=individuosBaseline; i<N; i++)
     {
         std::vector<int> listaVazia(numeroCelulas);
         std::iota(listaVazia.begin(), listaVazia.end(), 0);
@@ -147,7 +217,7 @@ void geraPopulacaoInicial()
     }
 }
 
-void avalia(int formulacao)
+void avalia(int formulacao, int tau)
 {
     if(formulacao == 1)
     {
@@ -156,16 +226,22 @@ void avalia(int formulacao)
             for(int j=0; j<numeroVeiculos; j++)
             {
                 std::vector<int> contador(numeroClusters, 0);
-                for(int celula: movimentacao[j])
+                std::vector<bool> primeiroAteTau(numeroClusters, false);
+                for(int k=0; k<movimentacao[j].size(); k++)
                 {
+                    int celula = movimentacao[j][k];
                     if(alocacao[i][celula])
                     {
                         contador[cluster[celula]] ++;
+                        if(tempoInicial[i][k] <= tempoInicio + tau)
+                        {
+                            primeiroAteTau[cluster[celula]] = true;
+                        }
                     }
                 }
                 for(int k=0; k<numeroClusters; k++)
                 {
-                    if(contador[k] >= contato[k])
+                    if(primeiroAteTau[k] && contador[k] >= contato[k])
                     {
                         totalCobertura[i][k] ++;
                     }
@@ -181,6 +257,7 @@ void avalia(int formulacao)
             {
                 int contador = 0;
                 std::vector<bool> passou(numeroClusters, false);
+                std::vector<bool> primeiroAteTau(numeroClusters, false);
                 for(int celula: movimentacao[j])
                 {
                     if(alocacao[i][celula])
@@ -312,9 +389,10 @@ void mutacao1(int filho)
             listaVazia.push_back(i);
         }
     }
-    if(listaVazia.size() >= AM && totalAlocacao[filho]+AM <= LS*numeroCelulas)
+    int agressividade = std::max(1, int(totalAlocacao[filho]*AM));
+    if(listaVazia.size() >= agressividade && totalAlocacao[filho]+agressividade <= LS*numeroCelulas)
     {
-        for(int i=0; i<AM; i++)
+        for(int i=0; i<agressividade; i++)
         {
             std::uniform_int_distribution<> dist(0, listaVazia.size()-1);
             int pos = dist(gen);
@@ -335,9 +413,10 @@ void mutacao2(int filho)
             listaVazia.push_back(i);
         }
     }
-    if(listaVazia.size() >= AM && totalAlocacao[filho]-AM >= LI*numeroCelulas)
+    int agressividade = std::max(1, int(totalAlocacao[filho]*AM));
+    if(listaVazia.size() >= agressividade && totalAlocacao[filho]-agressividade >= LI*numeroCelulas)
     {
-        for(int i=0; i<AM; i++)
+        for(int i=0; i<agressividade; i++)
         {
             std::uniform_int_distribution<> dist(0, listaVazia.size()-1);
             int pos = dist(gen);
@@ -363,9 +442,10 @@ void mutacao3(int filho)
             listaCheia.push_back(i);
         }
     }
-    if(listaVazia.size() >= AM && listaCheia.size() >= AM)
+    int agressividade = std::max(1, int(totalAlocacao[filho]*AM));
+    if(listaVazia.size() >= agressividade && listaCheia.size() >= agressividade)
     {
-        for(int i=0; i<AM; i++)
+        for(int i=0; i<agressividade; i++)
         {
             std::uniform_int_distribution<> dist(0, listaVazia.size()-1);
             std::uniform_int_distribution<> dist2(0, listaCheia.size()-1);
@@ -579,9 +659,18 @@ void selecao()
 
 void imprimeSolucoes(int numeroExperimento)
 {
+    std::string dirName = "experimento " + std::to_string(numeroExperimento) + "/";
+    DIR* dir = opendir(dirName.c_str());
+    if (dir) {
+        closedir(dir);
+    } else {
+        if (mkdir(dirName.c_str(), 0777) != 0) {
+            std::cerr << "Error creating directory" << std::endl;
+        }
+    }
     for(int i=0; i<N; i++)
     {
-        std::ofstream myFile("solucao"+std::to_string(numeroExperimento)+"-"+std::to_string(i+1)+".txt");
+        std::ofstream myFile(dirName + "solucao"+std::to_string(numeroExperimento)+"-"+std::to_string(i+1)+".txt");
         myFile << "Total de RSUs:" << std::endl;
         myFile << totalAlocacao[i+N] << std::endl;
         for(int j=0; j<numeroClusters; j++)
@@ -604,34 +693,45 @@ void imprimeSolucoes(int numeroExperimento)
 
 int main(int argc, char **argv)
 {
-    int formulacao = 2;
+    int formulacao = 1;
+    int tau = 30; // em segundos
     int numeroExperimento = 1;
-    if(argc == 3)
+    if(argc == 4)
     {
         formulacao = std::atoi(argv[1]);
-        numeroExperimento = std::atoi(argv[2]);
+        tau = std::atoi(argv[2]);
+        numeroExperimento = std::atoi(argv[3]);
     }
     else
     {
-        char output;
-        std::cout << "Utilizando formulacao " << formulacao << " e experimento " << numeroExperimento << std::endl;
-        getchar();
+        char op;
+        std::cout << "Utilizando formulacao " << formulacao << " e tau de " << tau << " segundos no experimento " << numeroExperimento << ".";
+        std::cout << " Prosseguir? (s/n)" << std::endl;
+        std::cin >> op;
+        if(op != 's')
+        {
+            return 0;
+        }
     }
     std::cout << "Iniciando..." << std::endl;
     leParametros();
     inicializa();
     geraPopulacaoInicial();
-    avalia(formulacao);
+    avalia(formulacao, tau);
     std::copy(alocacao.begin(), alocacao.begin()+N, alocacao.begin()+N);
     std::copy(totalAlocacao.begin(), totalAlocacao.begin()+N, totalAlocacao.begin()+N);
     std::copy(totalCobertura.begin(), totalCobertura.begin()+N, totalCobertura.begin()+N);
     for(int i=0; i<G; i++)
     {
         std::cout << i+1 << "\n"; // debug
+        auto beg = std::chrono::high_resolution_clock::now();
         cruzamento();
         mutacao();
-        avalia(formulacao);
+        avalia(formulacao, tau);
         selecao();
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - beg);
+        std::cout << "Duracao: " << duration.count() << std::endl; // debug
     }
     imprimeSolucoes(numeroExperimento);
     return 0;
