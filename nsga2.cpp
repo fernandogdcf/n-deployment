@@ -27,7 +27,8 @@
 #define AM 0.01 // agressividade da mutaçao
 
 #define QBL 20 // quantidade de elementos do baseline
-
+#define QG 2   // quantidade de elementos do grasp
+ 
 #define TF "trace.csv"    // arquivo de entrada
 #define CF "cluster.csv"  // arquivo de clusters
 #define BL "baseline.csv" // arquivo de clusters
@@ -49,6 +50,7 @@ std::vector<int> contato;
 // variaveis auxiliares
 std::map<int, std::pair<int, int>> indiceParaCelula;
 std::vector<int> baseline;
+std::vector<std::vector<int>> grasp(QG);
 
 // aleatoriedade
 std::random_device rd;                         
@@ -60,7 +62,7 @@ int numeroVeiculos = 0;
 int numeroClusters = 0;
 int tempoInicio = INT_MAX;
 
-void leParametros()
+void leParametros(int tau)
 {
     std::map<std::pair<int, int>, int> celulaParaIndice;
     std::map<int, int> veiculoParaIndice;
@@ -162,6 +164,27 @@ void leParametros()
         }
     }
     file3.close();
+    for(int i=0; i<QG; i++)
+    {
+        std::ifstream file4("grasp"+std::to_string(i+1)+"_"+std::to_string(tau)+".csv");
+        while (std::getline(file4, line)) 
+        {
+            std::stringstream lineStream(line);
+            std::string cell;
+            std::vector<std::string> parsedRow;
+            while (std::getline(lineStream, cell, ',')) 
+            {
+                parsedRow.push_back(cell);
+            }
+            std::pair<int, int> posCelula = {std::stoi(parsedRow[0]), std::stoi(parsedRow[1])};
+            auto it = celulaParaIndice.find(posCelula);
+            if(it != celulaParaIndice.end())
+            {
+                grasp[i].push_back(it->second);
+            }
+        }
+        file4.close();
+    }
 }
 
 int carregaBaseline()
@@ -186,6 +209,29 @@ int carregaBaseline()
     return QBL;
 }
 
+int carregaGrasp(int inicio)
+{
+    int quantidade = 0;
+    for(int i=0; i<QG; i++)
+    {
+        std::cout << "size: " << grasp[i].size() << std::endl;
+        if(grasp[i].size() > 0)
+        {
+            quantidade ++;
+            for(int j=0; j<grasp[i].size(); j++)
+            {
+                alocacao[inicio+i][grasp[i][j]] = true;
+            }
+            totalAlocacao[inicio+i] = grasp[i].size();
+        }
+        else
+        {
+            return quantidade;
+        }
+    }
+    return quantidade;
+}
+
 void inicializa()
 {
     alocacao.resize(2*N, std::vector<bool>(numeroCelulas, false));
@@ -201,7 +247,8 @@ void geraPopulacaoInicial()
 {
     std::uniform_int_distribution<> dist(int(LI*numeroCelulas), int(LS*numeroCelulas-1));
     int individuosBaseline = carregaBaseline();
-    for(int i=individuosBaseline; i<N; i++)
+    int individuosGrasp = carregaGrasp(individuosBaseline);
+    for(int i=individuosBaseline+individuosGrasp; i<N; i++)
     {
         std::vector<int> listaVazia(numeroCelulas);
         std::iota(listaVazia.begin(), listaVazia.end(), 0);
@@ -275,6 +322,73 @@ void avalia(int formulacao, int tau)
                 }
             }
         }
+    }
+}
+
+void gravaBenchmarks(int numeroExperimento)
+{
+    std::string dirName = "experimento " + std::to_string(numeroExperimento) + "/";
+    DIR* dir = opendir(dirName.c_str());
+    if (dir) {
+        closedir(dir);
+    } else {
+        if (mkdir(dirName.c_str(), 0777) != 0) {
+            std::cerr << "Error creating directory" << std::endl;
+        }
+    }
+    int inicioGrasp = 0;
+    if(baseline.size() > 0)
+    {
+        for(int i=0; i<QBL; i++)
+        {
+            std::ofstream myFile(dirName + "baseline-"+std::to_string(i+1)+".txt");
+            myFile << "Total de RSUs:" << std::endl;
+            myFile << totalAlocacao[i+N] << std::endl;
+            for(int j=0; j<numeroClusters; j++)
+            {
+                myFile << "Cobertura no cluster "+std::to_string(j)+":" << std::endl;
+                myFile << totalCobertura[i+N][j] << std::endl;
+            } 
+            myFile << "Celulas com RSU:" << std::endl;
+            for(int j=0; j<numeroCelulas; j++)
+            {
+                if(alocacao[i+N][j])
+                {
+                    auto it = indiceParaCelula.find(j);
+                    if (it != indiceParaCelula.end())
+                    {
+                        myFile << std::to_string(it->second.first)+","+std::to_string(it->second.second) << std::endl;
+                    }
+                }
+            }
+            myFile.close();
+        }
+        inicioGrasp = QBL;
+    }
+    for(int i=0; i<QG; i++)
+    {
+        int idx = i+inicioGrasp; 
+        std::ofstream myFile(dirName + "grasp-"+std::to_string(i+1)+".txt");
+        myFile << "Total de RSUs:" << std::endl;
+        myFile << totalAlocacao[idx+N] << std::endl;
+        for(int j=0; j<numeroClusters; j++)
+        {
+            myFile << "Cobertura no cluster "+std::to_string(j)+":" << std::endl;
+            myFile << totalCobertura[idx+N][j] << std::endl;
+        } 
+        myFile << "Celulas com RSU:" << std::endl;
+        for(int j=0; j<numeroCelulas; j++)
+        {
+            if(alocacao[idx+N][j])
+            {
+                auto it = indiceParaCelula.find(j);
+                if (it != indiceParaCelula.end())
+                {
+                    myFile << std::to_string(it->second.first)+","+std::to_string(it->second.second) << std::endl;
+                }
+            }
+        }
+        myFile.close();
     }
 }
 
@@ -370,8 +484,14 @@ void cruzamento()
         int desvio = std::abs(totalAlocacao[pai1]-totalAlocacao[pai2])/2.0;
         std::normal_distribution<> dist3(media, desvio);
         int tamanhoFilho = dist3(gen);
+        int tentativas = 0;
         while(tamanhoFilho < LI*numeroCelulas || tamanhoFilho > LS*numeroCelulas) 
         {
+            if(tentativas ++ == 10)
+            {
+                tamanhoFilho = media;
+                break;
+            }
             tamanhoFilho = dist3(gen);
         }
         recombinacao(i, tamanhoFilho, pai1, pai2, proporcaoPai1);
@@ -649,6 +769,7 @@ void selecao()
                 std::copy(totalCobertura[indice].begin(), totalCobertura[indice].end(), totalCoberturaTemp[tamanho].begin());
                 tamanho ++;
             }
+            break;
         }
         rankFronteira ++;
     }
@@ -670,7 +791,7 @@ void imprimeSolucoes(int numeroExperimento)
     }
     for(int i=0; i<N; i++)
     {
-        std::ofstream myFile(dirName + "solucao"+std::to_string(numeroExperimento)+"-"+std::to_string(i+1)+".txt");
+        std::ofstream myFile(dirName + "solucao-"+std::to_string(i+1)+".txt");
         myFile << "Total de RSUs:" << std::endl;
         myFile << totalAlocacao[i+N] << std::endl;
         for(int j=0; j<numeroClusters; j++)
@@ -679,12 +800,15 @@ void imprimeSolucoes(int numeroExperimento)
             myFile << totalCobertura[i+N][j] << std::endl;
         } 
         myFile << "Celulas com RSU:" << std::endl;
-        for(int j: alocacao[i+N])
+        for(int j=0; j<numeroCelulas; j++)
         {
-            auto it = indiceParaCelula.find(j);
-            if (it != indiceParaCelula.end())
+            if(alocacao[i+N][j])
             {
-                myFile << std::to_string(it->second.first)+","+std::to_string(it->second.second) << std::endl;
+                auto it = indiceParaCelula.find(j);
+                if (it != indiceParaCelula.end())
+                {
+                    myFile << std::to_string(it->second.first)+","+std::to_string(it->second.second) << std::endl;
+                }
             }
         }
         myFile.close();
@@ -714,20 +838,24 @@ int main(int argc, char **argv)
         }
     }
     std::cout << "Iniciando..." << std::endl;
-    leParametros();
+    leParametros(tau);
     inicializa();
     geraPopulacaoInicial();
     avalia(formulacao, tau);
     std::copy(alocacao.begin(), alocacao.begin()+N, alocacao.begin()+N);
     std::copy(totalAlocacao.begin(), totalAlocacao.begin()+N, totalAlocacao.begin()+N);
     std::copy(totalCobertura.begin(), totalCobertura.begin()+N, totalCobertura.begin()+N);
+    gravaBenchmarks(numeroExperimento);
     for(int i=0; i<G; i++)
     {
         std::cout << i+1 << "\n"; // debug
         auto beg = std::chrono::high_resolution_clock::now();
         cruzamento();
+        std::cout << "mutacao\n";
         mutacao();
+        std::cout << "avalia\n";
         avalia(formulacao, tau);
+        std::cout << "selecao\n";
         selecao();
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - beg);
