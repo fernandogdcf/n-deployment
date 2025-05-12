@@ -445,9 +445,9 @@ void recombinacao(int filho, int tamanho, int pai1, int pai2, double proporcaoPa
                     listaVazia.push_back(i);
                 }
             }
-            std::uniform_int_distribution<> dist2(0, listaVazia.size()-1);
             while(totalAlocacao[filho] < tamanho)
             {
+                std::uniform_int_distribution<> dist2(0, listaVazia.size()-1);
                 int pos = dist2(gen);
                 alocacao[filho][listaVazia[pos]] = true;
                 totalAlocacao[filho] ++;
