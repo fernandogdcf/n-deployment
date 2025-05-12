@@ -280,7 +280,7 @@ void avalia(int formulacao, int tau)
                     if(alocacao[i][celula])
                     {
                         contador[cluster[celula]] ++;
-                        if(tempoInicial[i][k] <= tempoInicio + tau)
+                        if(tempoInicial[j][celula] <= tempoInicio+tau)
                         {
                             primeiroAteTau[cluster[celula]] = true;
                         }
