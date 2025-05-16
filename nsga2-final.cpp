@@ -13,9 +13,10 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <dirent.h>
+#include <bits/stdc++.h>
 
-#define N 10 // tamanho da populaçao - deve ser par
-#define G 10 // quantidade de geraçoes
+#define N 500 // tamanho da populaçao - deve ser par
+#define G 4 // quantidade de geraçoes
 
 #define LI 0.01 // limite inferior
 #define LS 0.5  // limite superior
@@ -50,6 +51,7 @@ std::vector<int> contato;
 // variaveis auxiliares
 std::map<int, std::pair<int, int>> indiceParaCelula;
 std::vector<int> baseline;
+std::vector<std::vector<std::vector<int>>> biobjective(3, std::vector<std::vector<int>>(N));
 std::vector<std::vector<int>> grasp(QG);
 
 // aleatoriedade
@@ -61,6 +63,16 @@ int numeroCelulas = 0;
 int numeroVeiculos = 0;
 int numeroClusters = 0;
 int tempoInicio = INT_MAX;
+
+std::vector <std::string> split(std::string text, char separator){
+    std::string str;
+    std::stringstream ss(text);
+    std::vector <std::string> result;
+    while(std::getline(ss, str, separator)){
+        result.push_back(str);
+    }
+    return result;
+}
 
 void leParametros(int tau)
 {
@@ -185,6 +197,35 @@ void leParametros(int tau)
         }
         file4.close();
     }
+    for(int i=0; i<3; i++)
+    {
+        for(int j=0; j<N; j++)
+        {
+            int inicio = 7;
+            if(tau == 60) inicio = 10;
+            else if(tau == 120) inicio = 13;
+            std::string fileName = "experimento " + std::to_string(inicio+i) + "/solucao-" + std::to_string(j+1) + ".txt";
+            std::string myText;
+            std::ifstream MyReadFile(fileName);
+            bool le = false;
+            while (getline (MyReadFile, myText)) {
+                if(le)
+                {
+                    std::vector<std::string> palavras = split(myText, ',');
+                    std::pair<int, int> posCelula = {std::stoi(palavras[0]), std::stoi(palavras[1])};
+                    auto it = celulaParaIndice.find(posCelula);
+                    if(it != celulaParaIndice.end())
+                    {
+                        biobjective[i][j].push_back(it->second);
+                    }
+                }
+                else if (myText.find("Celulas") != std::string::npos) {
+                    le = true;
+                }
+            }
+            MyReadFile.close(); 
+        }
+    }
 }
 
 int carregaBaseline()
@@ -231,6 +272,30 @@ int carregaGrasp(int inicio)
     return quantidade;
 }
 
+int carregaBiObjective(int inicio)
+{
+    int quantidade = 0;
+    if(N < 300+inicio)
+        return 0;
+    for(int i=0; i<3; i++)
+    {
+        std::vector<int> lista(N);
+        std::iota(lista.begin(), lista.end(), 0);
+        for(int j=0; j<100; j++)
+        {
+            std::uniform_int_distribution<> dist(0, lista.size()-1);
+            int pos = dist(gen);
+            for(int l=0; l<biobjective[i][lista[pos]].size(); l++)
+            {
+                alocacao[inicio+i*j+j][biobjective[i][lista[pos]][l]] = true;
+                totalAlocacao[inicio+i*j+j] ++;
+            }
+            lista.erase(lista.begin()+pos);
+        }
+    }
+    return 300;
+}
+
 void inicializa()
 {
     alocacao.resize(2*N, std::vector<bool>(numeroCelulas, false));
@@ -247,7 +312,8 @@ void geraPopulacaoInicial()
     std::uniform_int_distribution<> dist(int(LI*numeroCelulas), int(LS*numeroCelulas-1));
     int individuosBaseline = carregaBaseline();
     int individuosGrasp = carregaGrasp(individuosBaseline);
-    for(int i=individuosBaseline+individuosGrasp; i<N; i++)
+    int individuosBiObjective = carregaBiObjective(individuosGrasp+individuosBaseline);
+    for(int i=individuosBaseline+individuosGrasp+individuosBiObjective; i<N; i++)
     {
         std::vector<int> listaVazia(numeroCelulas);
         std::iota(listaVazia.begin(), listaVazia.end(), 0);

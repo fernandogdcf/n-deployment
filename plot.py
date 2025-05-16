@@ -1,12 +1,12 @@
 import os
 import matplotlib.pyplot as plt
+import sys
 
 def le(numero_experimento, nome, total_alocacao, total_cobertura):
 
     idx = 1
     while True:
         file_path = "experimento "+str(numero_experimento)+"/"+nome+"-"+str(idx)+".txt"
-        total_cobertura.append([])
         if not(os.path.exists(file_path)):
             break
         proximo = 0
@@ -32,24 +32,60 @@ def le(numero_experimento, nome, total_alocacao, total_cobertura):
 
 def plot(legenda, color, titulo, total_alocacao, total_cobertura, cluster):
     for i in range(len(legenda)):
-        plt.plot(total_alocacao[i], total_cobertura[i][cluster], marker='o', linestyle='--', color=color[i], label=legenda[i])
+        plt.plot(total_alocacao[i], total_cobertura[i][cluster], 'o', color=color[i], label=legenda[i])
     plt.xlabel('Number of RSUs')
     plt.ylabel('Vehicle Coverage')
     plt.title(titulo)
     plt.legend()
     plt.show()
 
+def domina(total_alocacao, total_cobertura, i, j):
+    domina = False
+    if(total_alocacao[i] > total_alocacao[j]):
+        return False
+    if(total_alocacao[i] < total_alocacao[j]):
+        domina = True
+    if(total_cobertura[i] < total_cobertura[j]):
+        return False
+    elif(total_cobertura[i] > total_cobertura[j]):
+        domina = True
+    return domina
+
+def limpa(total_alocacao, total_cobertura, cluster):
+    lista = []
+    for i in range(len(total_alocacao)):
+        for j in range(len(total_alocacao)):
+            if(domina(total_alocacao, total_cobertura[cluster], i, j)):
+                if(not(j in lista)):
+                    lista.append(j)
+    lista = sorted(lista,reverse=True)
+    for k in range(len(lista)):
+        j = lista[k]
+        del total_alocacao[j]
+        for l in range(len(total_cobertura)):
+            del total_cobertura[l][j]
+
 if __name__ == '__main__':
 
+    n = len(sys.argv)
+    numero_experimento = 1
+    cluster = 0
+    if(n == 3):
+        numero_experimento = int(sys.argv[1])
+        cluster = int(sys.argv[2])
     total_alocacao_baseline = []
     total_cobertura_baseline = []
     total_alocacao_baseline.append([])
     total_cobertura_baseline.append([])
-    le(4, "baseline", total_alocacao_baseline[0], total_cobertura_baseline[0])
+    le(numero_experimento, "baseline", total_alocacao_baseline[0], total_cobertura_baseline[0])
     total_alocacao_baseline.append([])
     total_cobertura_baseline.append([])
-    le(4, "grasp", total_alocacao_baseline[1], total_cobertura_baseline[1])
-    legenda = ["Baseline", "Grasp"]
-    color = ["r", "black"]
-    plot(legenda, color, "Cluster 0", total_alocacao_baseline, total_cobertura_baseline, 0)
+    le(numero_experimento, "grasp", total_alocacao_baseline[1], total_cobertura_baseline[1])
+    total_alocacao_baseline.append([])
+    total_cobertura_baseline.append([])
+    le(numero_experimento, "solucao", total_alocacao_baseline[2], total_cobertura_baseline[2])
+    limpa(total_alocacao_baseline[2], total_cobertura_baseline[2], cluster)
+    legenda = ["Baseline", "GRASP", "NSGA-II"]
+    color = ["r", "black", "blue"]
+    plot(legenda, color, "", total_alocacao_baseline, total_cobertura_baseline, cluster)
     

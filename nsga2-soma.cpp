@@ -14,7 +14,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-#define N 10 // tamanho da populaçao - deve ser par
+#define N 40 // tamanho da populaçao - deve ser par
 #define G 10 // quantidade de geraçoes
 
 #define LI 0.01 // limite inferior
@@ -36,7 +36,7 @@
 
 // objetivos
 std::vector<int> totalAlocacao(2*N, 0);
-std::vector<std::vector<int>> totalCobertura;
+std::vector<int> totalCobertura;
 
 // variaveis de decisao
 std::vector<std::vector<bool>> alocacao;
@@ -234,7 +234,7 @@ int carregaGrasp(int inicio)
 void inicializa()
 {
     alocacao.resize(2*N, std::vector<bool>(numeroCelulas, false));
-    totalCobertura.resize(2*N, std::vector<int>(numeroClusters, 0));
+    totalCobertura.resize(2*N, 0);
     contato.resize(numeroClusters);
     for(int i=0; i<numeroClusters; i++)
     {
@@ -281,8 +281,6 @@ void avalia(int formulacao, int tau)
                         contador[cluster[celula]] ++;
                         if(tempoInicial[j][celula] <= tempoInicio+tau)
                         {
-                            //if(i==19 && j==56260 && cluster[celula] == 2)
-                              //  std::cout << indiceParaCelula.find(celula)->second.first << "," << indiceParaCelula.find(celula)->second.second << "\n";
                             primeiroAteTau[cluster[celula]] = true;
                         }
                     }
@@ -291,7 +289,7 @@ void avalia(int formulacao, int tau)
                 {
                     if(primeiroAteTau[k] && contador[k] >= contato[k])
                     {
-                        totalCobertura[i][k] ++;
+                        totalCobertura[i] ++;
                     }
                 }
             }
@@ -318,7 +316,7 @@ void avalia(int formulacao, int tau)
                 {
                     if(passou[k] && contador >= contato[k])
                     {
-                        totalCobertura[i][k] ++;
+                        totalCobertura[i] ++;
                     }
                 }
             }
@@ -345,11 +343,11 @@ void gravaBenchmarks(int numeroExperimento)
             std::ofstream myFile(dirName + "baseline-"+std::to_string(i+1)+".txt");
             myFile << "Total de RSUs:" << std::endl;
             myFile << totalAlocacao[i+N] << std::endl;
-            for(int j=0; j<numeroClusters; j++)
-            {
-                myFile << "Cobertura no cluster "+std::to_string(j)+":" << std::endl;
-                myFile << totalCobertura[i+N][j] << std::endl;
-            } 
+            //for(int j=0; j<numeroClusters; j++)
+            //{
+                myFile << "Cobertura no cluster "+std::to_string(0)+":" << std::endl;
+                myFile << totalCobertura[i+N] << std::endl;
+            //} 
             myFile << "Celulas com RSU:" << std::endl;
             for(int j=0; j<numeroCelulas; j++)
             {
@@ -372,11 +370,11 @@ void gravaBenchmarks(int numeroExperimento)
         std::ofstream myFile(dirName + "grasp-"+std::to_string(i+1)+".txt");
         myFile << "Total de RSUs:" << std::endl;
         myFile << totalAlocacao[idx+N] << std::endl;
-        for(int j=0; j<numeroClusters; j++)
-        {
-            myFile << "Cobertura no cluster "+std::to_string(j)+":" << std::endl;
-            myFile << totalCobertura[idx+N][j] << std::endl;
-        } 
+        //for(int j=0; j<numeroClusters; j++)
+        //{
+            myFile << "Cobertura no cluster "+std::to_string(0)+":" << std::endl;
+            myFile << totalCobertura[idx+N] << std::endl;
+        //} 
         myFile << "Celulas com RSU:" << std::endl;
         for(int j=0; j<numeroCelulas; j++)
         {
@@ -398,7 +396,7 @@ void recombinacao(int filho, int tamanho, int pai1, int pai2, double proporcaoPa
     std::uniform_real_distribution<> dist(0.0, 1.0);
     std::vector<int> listaPai1, listaPai2, listaVazia;
     int tamanhoAtual = 0;
-    std::fill(totalCobertura[filho].begin(), totalCobertura[filho].end(), 0);
+    totalCobertura[filho] = 0;
     for(int i=0; i<numeroCelulas; i++)
     {
         alocacao[filho][i] = false;
@@ -473,10 +471,10 @@ void cruzamento()
         if(dist2(gen) > TC)
         {
             std::copy(alocacao[pai1].begin(), alocacao[pai1].end(), alocacao[i].begin());
-            std::fill(totalCobertura[i].begin(), totalCobertura[i].end(), 0);
+            totalCobertura[i] = 0;
             totalAlocacao[i] = totalAlocacao[pai1];
             std::copy(alocacao[pai2].begin(), alocacao[pai2].end(), alocacao[i+1].begin());
-            std::fill(totalCobertura[i+1].begin(), totalCobertura[i+1].end(), 0);
+            totalCobertura[i+1] = 0;
             totalAlocacao[i+1] = totalAlocacao[pai2];
             continue;
         }
@@ -611,17 +609,17 @@ bool domina(int individuo1, int individuo2)
     {
         return false;
     }
-    for(int i=0; i<numeroClusters; i++)
-    {
-        if(totalCobertura[individuo1][i] > totalCobertura[individuo2][i])
+    //for(int i=0; i<numeroClusters; i++)
+    //{
+        if(totalCobertura[individuo1] > totalCobertura[individuo2])
         {
             domina = true;
         }
-        else if(totalCobertura[individuo1][i] < totalCobertura[individuo2][i])
+        else if(totalCobertura[individuo1] < totalCobertura[individuo2])
         {
             return false;
         }
-    }
+    //}
     return domina;
 }
 
@@ -701,18 +699,18 @@ void distanciaDeMultidao(std::vector<std::pair<double, int>> &distancia)
     for(int j=0; j<numeroClusters; j++)
     {
         std::vector<std::pair<int, int>> ordenaCobertura(tamanho);
-        int max = totalCobertura[distancia[0].second][j];
-        int min = totalCobertura[distancia[0].second][j];
+        int max = totalCobertura[distancia[0].second];
+        int min = totalCobertura[distancia[0].second];
         for(int i=0; i<tamanho; i++)
         {
-            ordenaCobertura[i] = {totalCobertura[distancia[i].second][j], i};
-            if(totalCobertura[distancia[i].second][j] > max)
+            ordenaCobertura[i] = {totalCobertura[distancia[i].second], i};
+            if(totalCobertura[distancia[i].second] > max)
             {
-                max = totalCobertura[distancia[i].second][j];
+                max = totalCobertura[distancia[i].second];
             }
-            else if(totalCobertura[distancia[i].second][j] < min)
+            else if(totalCobertura[distancia[i].second] < min)
             {
-                min = totalCobertura[distancia[i].second][j];
+                min = totalCobertura[distancia[i].second];
             }
         }
         std::sort(ordenaCobertura.begin(), ordenaCobertura.end());
@@ -722,7 +720,7 @@ void distanciaDeMultidao(std::vector<std::pair<double, int>> &distancia)
         {
             int vizinhoMaior = distancia[ordenaCobertura[i+1].second].second;
             int vizinhoMenor = distancia[ordenaCobertura[i-1].second].second;
-            distancia[ordenaCobertura[i].second].first += double(totalCobertura[vizinhoMaior][j]-totalCobertura[vizinhoMenor][j])/double(max-min);
+            distancia[ordenaCobertura[i].second].first += double(totalCobertura[vizinhoMaior]-totalCobertura[vizinhoMenor])/double(max-min);
         }
     }
 }
@@ -732,7 +730,7 @@ void selecao()
     std::vector<int> rank(2*N);
     ordenacaoNaoDominada(rank);
     std::vector<std::vector<bool>> alocacaoTemp(N, std::vector<bool>(numeroCelulas));
-    std::vector<std::vector<int>> totalCoberturaTemp(N, std::vector<int>(numeroClusters));
+    std::vector<int> totalCoberturaTemp(N);
     std::vector<int> totalAlocacaoTemp(N);
     int tamanho = 0;
     int rankFronteira = 0;
@@ -753,7 +751,7 @@ void selecao()
                 int indice = distancia[i].second;
                 totalAlocacaoTemp[tamanho] = totalAlocacao[indice];
                 std::copy(alocacao[indice].begin(), alocacao[indice].end(), alocacaoTemp[tamanho].begin());
-                std::copy(totalCobertura[indice].begin(), totalCobertura[indice].end(), totalCoberturaTemp[tamanho].begin());
+                totalCoberturaTemp[tamanho] = totalCobertura[indice];
                 tamanho ++;
             }
         }
@@ -767,7 +765,7 @@ void selecao()
                 int indice = distancia[i].second;
                 totalAlocacaoTemp[tamanho] = totalAlocacao[indice];
                 std::copy(alocacao[indice].begin(), alocacao[indice].end(), alocacaoTemp[tamanho].begin());
-                std::copy(totalCobertura[indice].begin(), totalCobertura[indice].end(), totalCoberturaTemp[tamanho].begin());
+                totalCoberturaTemp[tamanho] = totalCobertura[indice];
                 tamanho ++;
             }
             break;
@@ -798,7 +796,7 @@ void imprimeSolucoes(int numeroExperimento)
         for(int j=0; j<numeroClusters; j++)
         {
             myFile << "Cobertura no cluster "+std::to_string(j)+":" << std::endl;
-            myFile << totalCobertura[i+N][j] << std::endl;
+            myFile << totalCobertura[i+N] << std::endl;
         } 
         myFile << "Celulas com RSU:" << std::endl;
         for(int j=0; j<numeroCelulas; j++)

@@ -14,7 +14,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-#define N 10 // tamanho da populaçao - deve ser par
+#define N 600 // tamanho da populaçao - deve ser par
 #define G 10 // quantidade de geraçoes
 
 #define LI 0.01 // limite inferior
@@ -26,7 +26,7 @@
 #define TM3 0.1 // taxa de mutaçao 3
 #define AM 0.01 // agressividade da mutaçao
 
-#define QBL 20 // quantidade de elementos do baseline
+#define QBL 500 // quantidade de elementos do baseline
 #define QG 2   // quantidade de elementos do grasp
  
 #define TF "trace.csv"    // arquivo de entrada

@@ -14,7 +14,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-#define N 10 // tamanho da populaçao - deve ser par
+#define N 40 // tamanho da populaçao - deve ser par
 #define G 10 // quantidade de geraçoes
 
 #define LI 0.01 // limite inferior
@@ -600,7 +600,7 @@ void mutacao()
     }
 }
 
-bool domina(int individuo1, int individuo2)
+bool domina(int individuo1, int individuo2, int cluster)
 {
     bool domina = false;
     if(totalAlocacao[individuo1] < totalAlocacao[individuo2])
@@ -611,21 +611,19 @@ bool domina(int individuo1, int individuo2)
     {
         return false;
     }
-    for(int i=0; i<numeroClusters; i++)
+    if(totalCobertura[individuo1][cluster] > totalCobertura[individuo2][cluster])
     {
-        if(totalCobertura[individuo1][i] > totalCobertura[individuo2][i])
-        {
-            domina = true;
-        }
-        else if(totalCobertura[individuo1][i] < totalCobertura[individuo2][i])
-        {
-            return false;
-        }
+        domina = true;
     }
+    else if(totalCobertura[individuo1][cluster] < totalCobertura[individuo2][cluster])
+    {
+        return false;
+    }
+    
     return domina;
 }
 
-void ordenacaoNaoDominada(std::vector<int> &rank)
+void ordenacaoNaoDominada(std::vector<int> &rank, int cluster)
 {
     std::vector<std::vector<int>> dominados(2*N);
     std::vector<int> numeroDomina(2*N, 0);
@@ -634,11 +632,11 @@ void ordenacaoNaoDominada(std::vector<int> &rank)
     {
         for(int j=0; j<2*N; j++)
         {
-            if(domina(i, j))
+            if(domina(i, j, cluster))
             {
                 dominados[i].push_back(j);
             }
-            else if(domina(j, i))
+            else if(domina(j, i, cluster))
             {
                 numeroDomina[i] ++;
             }
@@ -727,10 +725,10 @@ void distanciaDeMultidao(std::vector<std::pair<double, int>> &distancia)
     }
 }
 
-void selecao()
+void selecao(int cluster)
 {
     std::vector<int> rank(2*N);
-    ordenacaoNaoDominada(rank);
+    ordenacaoNaoDominada(rank, cluster);
     std::vector<std::vector<bool>> alocacaoTemp(N, std::vector<bool>(numeroCelulas));
     std::vector<std::vector<int>> totalCoberturaTemp(N, std::vector<int>(numeroClusters));
     std::vector<int> totalAlocacaoTemp(N);
@@ -819,13 +817,15 @@ void imprimeSolucoes(int numeroExperimento)
 int main(int argc, char **argv)
 {
     int formulacao = 1;
+    int cluster = 0;
     int tau = 30; // em segundos
     int numeroExperimento = 1;
-    if(argc == 4)
+    if(argc == 5)
     {
         formulacao = std::atoi(argv[1]);
         tau = std::atoi(argv[2]);
         numeroExperimento = std::atoi(argv[3]);
+        cluster = std::atoi(argv[4]);
     }
     else
     {
@@ -857,7 +857,7 @@ int main(int argc, char **argv)
         std::cout << "avalia\n";
         avalia(formulacao, tau);
         std::cout << "selecao\n";
-        selecao();
+        selecao(cluster);
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - beg);
         std::cout << "Duracao: " << duration.count() << std::endl; // debug
