@@ -36,10 +36,8 @@ if __name__ == '__main__':
 
     F = []
     B = []
-    G = []
     S = []
     Q = []
-    R = []
     ref_point = np.array([2500, 80000, 80000, 80000])
 
     tau = 30
@@ -59,11 +57,9 @@ if __name__ == '__main__':
         numero_experimento = 21
 
     le(numero_baseline, "baseline", B)
-    le(numero_baseline, "grasp", G)
 
     hv = HV(ref_point=ref_point)
     result_baseline = hv.do(np.array(B))
-    result_grasp = hv.do(np.array(G))
 
     for i in range(numero_experimento,numero_experimento+experimentos):
         F=[]
@@ -71,15 +67,14 @@ if __name__ == '__main__':
         result = hv.do(np.array(F))
         S.append(result)
         Q.append(result_baseline)
-        R.append(result_grasp)
 
-    d=[np.array(S), np.array(Q), np.array(R)]
+    d=[S, Q]
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
 
     bp = ax.boxplot(d, patch_artist = True,
-                    notch ='True', vert = 0)
+                    notch ='True')
 
     colors = ['#0000FF', '#00FF00', 
             '#FFFF00']
@@ -107,7 +102,7 @@ if __name__ == '__main__':
                 color ='#e7298a',
                 alpha = 0.5)
 
-    ax.set_xticklabels(['NSGA-II', 'Baseline', 'GRASP'])
+    ax.set_xticklabels(['NSGA-II', 'Baseline'])
     
     #plt.title("Customized box plot")
 

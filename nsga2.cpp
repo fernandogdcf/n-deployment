@@ -14,8 +14,8 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-#define N 10 // tamanho da populaçao - deve ser par
-#define G 10 // quantidade de geraçoes
+#define N 500 // tamanho da populaçao - deve ser par
+#define G 4 // quantidade de geraçoes
 
 #define LI 0.01 // limite inferior
 #define LS 0.5  // limite superior
@@ -27,7 +27,7 @@
 #define AM 0.01 // agressividade da mutaçao
 
 #define QBL 20 // quantidade de elementos do baseline
-#define QG 2   // quantidade de elementos do grasp
+#define QG 0   // quantidade de elementos do grasp
  
 #define TF "trace.csv"    // arquivo de entrada
 #define CF "cluster.csv"  // arquivo de clusters
@@ -62,7 +62,7 @@ int numeroVeiculos = 0;
 int numeroClusters = 0;
 int tempoInicio = INT_MAX;
 
-void leParametros(int tau)
+void leParametros(std::vector<int> tau)
 {
     std::map<std::pair<int, int>, int> celulaParaIndice;
     std::map<int, int> veiculoParaIndice;
@@ -166,7 +166,12 @@ void leParametros(int tau)
     file3.close();
     for(int i=0; i<QG; i++)
     {
-        std::ifstream file4("grasp"+std::to_string(i+1)+"_"+std::to_string(tau)+".csv");
+        std::string graspFile = "";
+        for(int t: tau)
+        {
+            graspFile = graspFile + "_" + std::to_string(t);
+        }
+        std::ifstream file4("grasp"+std::to_string(i+1)+graspFile+".csv");
         while (std::getline(file4, line)) 
         {
             std::stringstream lineStream(line);
@@ -231,7 +236,7 @@ int carregaGrasp(int inicio)
     return quantidade;
 }
 
-void inicializa()
+void inicializa(std::vector<int> tau)
 {
     alocacao.resize(2*N, std::vector<bool>(numeroCelulas, false));
     totalCobertura.resize(2*N, std::vector<int>(numeroClusters, 0));
@@ -239,6 +244,15 @@ void inicializa()
     for(int i=0; i<numeroClusters; i++)
     {
         contato[i] = pow(3, i);
+    }
+    if(tau.size() < numeroClusters)
+    {
+        int t = tau[0];
+        tau.clear();
+        for(int i=0; i<numeroClusters; i++)
+        {
+            tau.push_back(t);
+        }
     }
 }
 
@@ -263,7 +277,7 @@ void geraPopulacaoInicial()
     }
 }
 
-void avalia(int formulacao, int tau)
+void avalia(int formulacao, std::vector<int> tau)
 {
     if(formulacao == 1)
     {
@@ -279,10 +293,8 @@ void avalia(int formulacao, int tau)
                     if(alocacao[i][celula])
                     {
                         contador[cluster[celula]] ++;
-                        if(tempoInicial[j][celula] <= tempoInicio+tau)
+                        if(tempoInicial[j][celula] <= tempoInicio+tau[cluster[celula]])
                         {
-                            //if(i==19 && j==56260 && cluster[celula] == 2)
-                              //  std::cout << indiceParaCelula.find(celula)->second.first << "," << indiceParaCelula.find(celula)->second.second << "\n";
                             primeiroAteTau[cluster[celula]] = true;
                         }
                     }
@@ -819,28 +831,32 @@ void imprimeSolucoes(int numeroExperimento)
 int main(int argc, char **argv)
 {
     int formulacao = 1;
-    int tau = 30; // em segundos
+    std::vector<int> tau; // em segundos
     int numeroExperimento = 1;
-    if(argc == 4)
+    if(argc >= 3)
     {
-        formulacao = std::atoi(argv[1]);
-        tau = std::atoi(argv[2]);
-        numeroExperimento = std::atoi(argv[3]);
+        //formulacao = std::atoi(argv[1]);
+        numeroExperimento = std::atoi(argv[1]);
+        for(int i=2; i<argc; i++)
+        {
+            tau.push_back(std::atoi(argv[i]));
+        }
     }
     else
     {
         char op;
-        std::cout << "Utilizando formulacao " << formulacao << " e tau de " << tau << " segundos no experimento " << numeroExperimento << ".";
+        std::cout << "Utilizando formulacao " << formulacao << " e tau de " << 30 << " segundos no experimento " << numeroExperimento << ".";
         std::cout << " Prosseguir? (s/n)" << std::endl;
         std::cin >> op;
         if(op != 's')
         {
             return 0;
         }
+        tau.push_back(30);
     }
     std::cout << "Iniciando..." << std::endl;
     leParametros(tau);
-    inicializa();
+    inicializa(tau);
     geraPopulacaoInicial();
     avalia(formulacao, tau);
     std::copy(alocacao.begin(), alocacao.begin()+N, alocacao.begin()+N);

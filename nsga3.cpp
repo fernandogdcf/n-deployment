@@ -14,8 +14,8 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-#define N 500 // tamanho da populaçao - deve ser par
-#define G 500 // quantidade de geraçoes
+#define N 40 // tamanho da populaçao - deve ser par
+#define G 10 // quantidade de geraçoes
 
 #define LI 0.01 // limite inferior
 #define LS 0.5  // limite superior
@@ -27,7 +27,7 @@
 #define AM 0.01 // agressividade da mutaçao
 
 #define QBL 20 // quantidade de elementos do baseline
-#define QG 0   // quantidade de elementos do grasp
+#define QG 2   // quantidade de elementos do grasp
  
 #define TF "trace.csv"    // arquivo de entrada
 #define CF "cluster.csv"  // arquivo de clusters
@@ -62,7 +62,7 @@ int numeroVeiculos = 0;
 int numeroClusters = 0;
 int tempoInicio = INT_MAX;
 
-void leParametros(std::vector<int> tau)
+void leParametros(int tau)
 {
     std::map<std::pair<int, int>, int> celulaParaIndice;
     std::map<int, int> veiculoParaIndice;
@@ -166,12 +166,7 @@ void leParametros(std::vector<int> tau)
     file3.close();
     for(int i=0; i<QG; i++)
     {
-        std::string graspFile = "";
-        for(int t: tau)
-        {
-            graspFile = graspFile + "_" + std::to_string(t);
-        }
-        std::ifstream file4("grasp"+std::to_string(i+1)+graspFile+".csv");
+        std::ifstream file4("grasp"+std::to_string(i+1)+"_"+std::to_string(tau)+".csv");
         while (std::getline(file4, line)) 
         {
             std::stringstream lineStream(line);
@@ -236,7 +231,7 @@ int carregaGrasp(int inicio)
     return quantidade;
 }
 
-void inicializa(std::vector<int> tau)
+void inicializa()
 {
     alocacao.resize(2*N, std::vector<bool>(numeroCelulas, false));
     totalCobertura.resize(2*N, std::vector<int>(numeroClusters, 0));
@@ -244,15 +239,6 @@ void inicializa(std::vector<int> tau)
     for(int i=0; i<numeroClusters; i++)
     {
         contato[i] = pow(3, i);
-    }
-    if(tau.size() < numeroClusters)
-    {
-        int t = tau[0];
-        tau.clear();
-        for(int i=0; i<numeroClusters; i++)
-        {
-            tau.push_back(t);
-        }
     }
 }
 
@@ -277,7 +263,7 @@ void geraPopulacaoInicial()
     }
 }
 
-void avalia(int formulacao, std::vector<int> tau)
+void avalia(int formulacao, int tau)
 {
     if(formulacao == 1)
     {
@@ -293,8 +279,10 @@ void avalia(int formulacao, std::vector<int> tau)
                     if(alocacao[i][celula])
                     {
                         contador[cluster[celula]] ++;
-                        if(tempoInicial[j][celula] <= tempoInicio+tau[cluster[celula]])
+                        if(tempoInicial[j][celula] <= tempoInicio+tau)
                         {
+                            //if(i==19 && j==56260 && cluster[celula] == 2)
+                              //  std::cout << indiceParaCelula.find(celula)->second.first << "," << indiceParaCelula.find(celula)->second.second << "\n";
                             primeiroAteTau[cluster[celula]] = true;
                         }
                     }
@@ -612,7 +600,31 @@ void mutacao()
     }
 }
 
-bool domina(int individuo1, int individuo2, int cluster)
+double razaoNormalizada(int i, int op)
+{
+    int minAlocacao = numeroCelulas;
+    int maxAlocacao = 0;
+    std::vector<int> maxCobertura(numeroClusters, 0);
+    std::vector<int> minCobertura(numeroVeiculos, 0);
+    for(int x=0; x<2*N; x++)
+    {
+        if(totalAlocacao[x] < minAlocacao)
+            minAlocacao = totalAlocacao[x];
+        else if(totalAlocacao[x] > maxAlocacao)
+            maxAlocacao = totalAlocacao[x];
+        for(int y=0; y<numeroClusters; y++)
+        {
+            if(maxCobertura[y] < totalCobertura[x][y])
+                maxCobertura[y] = totalCobertura[x][y];
+            if(minCobertura[y] > totalCobertura[x][y])
+                minCobertura[y] = totalCobertura[x][y];
+        }
+    }
+    double alocacao = double(totalAlocacao[i]-minAlocacao)/double(maxAlocacao-minAlocacao);
+    return double(totalCobertura[i][op]-minCobertura[op])/double(maxCobertura[op]-minCobertura[op])/alocacao;
+}
+
+bool domina(int individuo1, int individuo2)
 {
     bool domina = false;
     if(totalAlocacao[individuo1] < totalAlocacao[individuo2])
@@ -623,19 +635,29 @@ bool domina(int individuo1, int individuo2, int cluster)
     {
         return false;
     }
-    if(totalCobertura[individuo1][cluster] > totalCobertura[individuo2][cluster])
+    for(int i=0; i<numeroClusters; i++)
     {
-        domina = true;
+        if(totalCobertura[individuo1][i] < totalCobertura[individuo2][i])
+        {
+            return false;
+        }
+        if(totalCobertura[individuo1][i] > totalCobertura[individuo2][i])
+        {
+            domina = true;
+        }
+        if(razaoNormalizada(individuo1,i) < razaoNormalizada(individuo2,i))
+        {
+            return false;
+        }
+        if(razaoNormalizada(individuo1,i) > razaoNormalizada(individuo2,i))
+        {
+            domina = true;
+        }
     }
-    else if(totalCobertura[individuo1][cluster] < totalCobertura[individuo2][cluster])
-    {
-        return false;
-    }
-    
     return domina;
 }
 
-void ordenacaoNaoDominada(std::vector<int> &rank, int cluster)
+void ordenacaoNaoDominada(std::vector<int> &rank)
 {
     std::vector<std::vector<int>> dominados(2*N);
     std::vector<int> numeroDomina(2*N, 0);
@@ -644,11 +666,11 @@ void ordenacaoNaoDominada(std::vector<int> &rank, int cluster)
     {
         for(int j=0; j<2*N; j++)
         {
-            if(domina(i, j, cluster))
+            if(domina(i, j))
             {
                 dominados[i].push_back(j);
             }
-            else if(domina(j, i, cluster))
+            else if(domina(j, i))
             {
                 numeroDomina[i] ++;
             }
@@ -700,8 +722,8 @@ void distanciaDeMultidao(std::vector<std::pair<double, int>> &distancia)
         }
     }
     std::sort(ordenaAlocacao.begin(), ordenaAlocacao.end());
-    distancia[ordenaAlocacao[0].second].first = numeroClusters + 1.0;
-    distancia[ordenaAlocacao[tamanho-1].second].first = numeroClusters + 1.0;
+    distancia[ordenaAlocacao[0].second].first = 2.0*numeroClusters + 1.0;
+    distancia[ordenaAlocacao[tamanho-1].second].first = 2.0*numeroClusters + 1.0;
     for(int i=1; i<tamanho-1; i++)
     {
         int vizinhoMaior = distancia[ordenaAlocacao[i+1].second].second;
@@ -726,21 +748,48 @@ void distanciaDeMultidao(std::vector<std::pair<double, int>> &distancia)
             }
         }
         std::sort(ordenaCobertura.begin(), ordenaCobertura.end());
-        distancia[ordenaCobertura[0].second].first = numeroClusters + 1.0;
-        distancia[ordenaCobertura[tamanho-1].second].first = numeroClusters + 1.0;
+        distancia[ordenaCobertura[0].second].first = 2.0*numeroClusters + 1.0;
+        distancia[ordenaCobertura[tamanho-1].second].first = 2.0*numeroClusters + 1.0;
         for(int i=1; i<tamanho-1; i++)
         {
             int vizinhoMaior = distancia[ordenaCobertura[i+1].second].second;
             int vizinhoMenor = distancia[ordenaCobertura[i-1].second].second;
-            distancia[ordenaCobertura[i].second].first += double(totalCobertura[vizinhoMaior][j]-totalCobertura[vizinhoMenor][j])/double(max-min);
+            distancia[ordenaCobertura[i].second].first += double(totalCobertura[vizinhoMaior][j]-totalCobertura[vizinhoMenor][j])/double(max-min)/100.0;
+        }
+
+        std::vector<std::pair<int, int>> ordenaRelacaoCobertura(tamanho);
+        max = razaoNormalizada(distancia[0].second, j);
+        min = razaoNormalizada(distancia[0].second, j);
+        for(int i=0; i<tamanho; i++)
+        {
+            ordenaRelacaoCobertura[i] = {razaoNormalizada(distancia[i].second, j), i};
+            if(razaoNormalizada(distancia[i].second, j) > max)
+            {
+                max = razaoNormalizada(distancia[i].second, j);
+            }
+            else if(razaoNormalizada(distancia[i].second, j) < min)
+            {
+                min = razaoNormalizada(distancia[i].second, j);
+            }
+        }
+        std::sort(ordenaRelacaoCobertura.begin(), ordenaRelacaoCobertura.end());
+        distancia[ordenaRelacaoCobertura[0].second].first = 2.0*numeroClusters + 1.0;
+        distancia[ordenaRelacaoCobertura[tamanho-1].second].first = 2.0*numeroClusters + 1.0;
+        for(int i=1; i<tamanho-1; i++)
+        {
+            int vizinhoMaior = distancia[ordenaRelacaoCobertura[i+1].second].second;
+            int vizinhoMenor = distancia[ordenaRelacaoCobertura[i-1].second].second;
+            double proximo = razaoNormalizada(vizinhoMaior, j);
+            double anterior = razaoNormalizada(vizinhoMenor, j);
+            distancia[ordenaRelacaoCobertura[i].second].first += double(proximo-anterior)/double(max-min);
         }
     }
 }
 
-void selecao(int cluster)
+void selecao()
 {
     std::vector<int> rank(2*N);
-    ordenacaoNaoDominada(rank, cluster);
+    ordenacaoNaoDominada(rank);
     std::vector<std::vector<bool>> alocacaoTemp(N, std::vector<bool>(numeroCelulas));
     std::vector<std::vector<int>> totalCoberturaTemp(N, std::vector<int>(numeroClusters));
     std::vector<int> totalAlocacaoTemp(N);
@@ -829,34 +878,28 @@ void imprimeSolucoes(int numeroExperimento)
 int main(int argc, char **argv)
 {
     int formulacao = 1;
-    int cluster = 0;
-    std::vector<int> tau; // em segundos
+    int tau = 30; // em segundos
     int numeroExperimento = 1;
-    if(argc >= 4)
+    if(argc == 4)
     {
-        //formulacao = std::atoi(argv[1]);
-        numeroExperimento = std::atoi(argv[1]);
-        cluster = std::atoi(argv[2]);
-        for(int i=3; i<argc; i++)
-        {
-            tau.push_back(std::atoi(argv[i]));
-        }
+        formulacao = std::atoi(argv[1]);
+        tau = std::atoi(argv[2]);
+        numeroExperimento = std::atoi(argv[3]);
     }
     else
     {
         char op;
-        std::cout << "Utilizando formulacao " << formulacao << " e tau de " << 30 << " segundos no experimento " << numeroExperimento << ".";
+        std::cout << "Utilizando formulacao " << formulacao << " e tau de " << tau << " segundos no experimento " << numeroExperimento << ".";
         std::cout << " Prosseguir? (s/n)" << std::endl;
         std::cin >> op;
         if(op != 's')
         {
             return 0;
         }
-        tau.push_back(30);
     }
     std::cout << "Iniciando..." << std::endl;
     leParametros(tau);
-    inicializa(tau);
+    inicializa();
     geraPopulacaoInicial();
     avalia(formulacao, tau);
     std::copy(alocacao.begin(), alocacao.begin()+N, alocacao.begin()+N);
@@ -873,7 +916,7 @@ int main(int argc, char **argv)
         std::cout << "avalia\n";
         avalia(formulacao, tau);
         std::cout << "selecao\n";
-        selecao(cluster);
+        selecao();
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - beg);
         std::cout << "Duracao: " << duration.count() << std::endl; // debug
